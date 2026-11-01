@@ -1,13 +1,15 @@
 """Typed data models shared across the ct-lens engine.
 
-Phase 1 only needs a light-weight view of a crt.sh JSON row
-(:class:`CrtShRecord`) and a summary of a quick scan (:class:`ScanSummary`).
-Richer, fully-normalised certificate models are introduced in Phase 3.
+* :class:`CrtShRecord` — a faithful, thin view of one crt.sh JSON row.
+* :class:`ScanSummary` — the quick summary produced by the Phase 1 spike.
+* :class:`Certificate` — the fully-normalised certificate used from Phase 3 on
+  (parsed dates, computed lifetime, wildcard flag, optional key/signature info).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 def issuer_organization(issuer_name: str) -> str:
@@ -141,3 +143,57 @@ class ScanSummary:
     unique_domains: int
     top_issuers: list[tuple[str, int]] = field(default_factory=list)
     sample_domains: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Certificate:
+    """A normalised certificate — the unit of the ct-lens dataset.
+
+    This is the clean, analysis-ready representation produced from a
+    :class:`CrtShRecord` by :mod:`ct_lens.core.parser`. Dates are parsed into
+    ``datetime`` objects and the certificate lifetime is derived from them.
+
+    The ``signature_algorithm`` / ``key_type`` / ``key_size`` fields are
+    *optional enrichment*: crt.sh's JSON index does not include them, so they
+    are only populated when the raw certificate is downloaded and parsed (see
+    :mod:`ct_lens.core.enrich`). They stay ``None`` otherwise.
+    """
+
+    cert_id: int
+    serial_number: str
+    issuer: str  # human-friendly CA name (the O= component)
+    issuer_name: str  # full issuer DN string
+    common_name: str
+    domains: tuple[str, ...]
+    not_before: datetime | None
+    not_after: datetime | None
+    entry_timestamp: datetime | None
+    signature_algorithm: str | None = None
+    key_type: str | None = None
+    key_size: int | None = None
+
+    @property
+    def lifetime_days(self) -> int | None:
+        """Validity period in whole days, or ``None`` if dates are missing."""
+        if self.not_before is None or self.not_after is None:
+            return None
+        return (self.not_after - self.not_before).days
+
+    @property
+    def is_wildcard(self) -> bool:
+        """True if any covered domain is a wildcard (``*.example.lk``)."""
+        return any(domain.startswith("*.") for domain in self.domains)
+
+    @property
+    def dedupe_key(self) -> tuple[str, str]:
+        """Key that collapses a pre-certificate and its final certificate.
+
+        crt.sh logs a *pre-certificate* and the *final certificate* as two
+        separate rows that share the same issuer and serial number. Counting
+        both would inflate CA-share statistics, so de-duplication groups on
+        ``(issuer_name, serial_number)``. When no serial is present we fall back
+        to the crt.sh id so distinct rows are never silently merged.
+        """
+        if self.serial_number:
+            return (self.issuer_name, self.serial_number.lower())
+        return ("__id__", str(self.cert_id))

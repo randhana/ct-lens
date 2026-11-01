@@ -110,6 +110,27 @@ class CrtShJsonSource(CertSource):
             f"{self._retries} attempts: {last_error}"
         )
 
+    def fetch_certificate_bytes(self, cert_id: int) -> bytes:
+        """Download the raw certificate for a crt.sh id (``?d=<id>``).
+
+        crt.sh returns the certificate itself (DER or PEM) at this endpoint.
+        Used by the optional enrichment step to read fields — signature
+        algorithm, key type/size — that are not present in the JSON index.
+
+        Args:
+            cert_id: The crt.sh certificate id.
+
+        Returns:
+            The raw certificate bytes (DER or PEM).
+
+        Raises:
+            httpx.HTTPError: On a transport or HTTP error (the caller decides
+                whether to skip this certificate).
+        """
+        response = self._client.get(CRTSH_URL, params={"d": str(cert_id)})
+        response.raise_for_status()
+        return response.content
+
     def close(self) -> None:
         """Close the underlying HTTP client if this source created it."""
         if self._owns_client:
