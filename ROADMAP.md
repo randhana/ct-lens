@@ -13,7 +13,7 @@ command-line tool; **Part B** adds a web UI on top of the same engine. All real 
 | 1 | Spike | crt.sh JSON source (polite UA, timeout, retry/back-off); `ct-lens scan <target>` → record count + top CAs + sample domains | ✅ |
 | 2 | Collector + cache | On-disk JSON cache (fetch once, re-run offline/instant); `--refresh` / `--no-cache` / `--cache-dir` / `--max-age`; `ct-lens cache` | ✅ |
 | 3 | Parser → dataset | Normalised `Certificate` model (parsed dates, lifetime, wildcard flag); **pre-certificate de-duplication**; optional key/signature enrichment; CSV + JSON export (`ct-lens export`) | ✅ |
-| 4 | Ecosystem analysis + charts | CA market share, certificate-lifetime trends, signature-algorithm / key-size adoption, issuance volume over time; matplotlib charts (`ct-lens analyze`) | ⬜ |
+| 4 | Ecosystem analysis + charts | CA market share, certificate-lifetime trends, signature-algorithm / key-size adoption, issuance volume over time; matplotlib charts (`ct-lens analyze`) | ✅ |
 | 5 | Security findings | Lookalike / typosquat detection, exposed internal/staging hostname catalogue, suspicious issuance — anonymised by default | ⬜ |
 | 6 | Report generation | Assemble dataset + charts + findings into a Markdown report (`ct-lens report <target>`) | ⬜ |
 | 7 | CLI polish + full dataset | crt.sh **Postgres** source for the complete set, config file, confirm TLD-agnostic, finalise subcommands | ⬜ |

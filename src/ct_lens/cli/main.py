@@ -19,7 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ct_lens import __version__
-from ct_lens.core import collector, export, parser
+from ct_lens.core import analysis, collector, export, parser
 from ct_lens.core.cache import DEFAULT_CACHE_DIR, Cache
 from ct_lens.core.collector import CollectionResult
 from ct_lens.core.models import Certificate, ScanSummary
@@ -209,31 +209,16 @@ def export_dataset(
         err_console.print("[red]Error:[/red] --format must be one of: csv, json, both")
         raise typer.Exit(code=2)
 
-    cache = None if no_cache else Cache(cache_dir)
-    try:
-        with (
-            CrtShJsonSource() as source,
-            console.status(f"Querying crt.sh for {target!r}…", spinner="dots"),
-        ):
-            result = collector.collect(
-                target,
-                source,
-                cache=cache,
-                refresh=refresh,
-                max_age=timedelta(hours=max_age_hours),
-            )
-            raw_count = len(result.records)
-            certificates = parser.build_dataset(result.records, dedupe=not no_dedupe)
-
-            if enrich:
-                with console.status("Enriching certificates (downloading + parsing)…"):
-                    certificates = _enrich(certificates, source, enrich_limit)
-    except ValueError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=2) from exc
-    except RuntimeError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+    result, raw_count, certificates = _load_certificates(
+        target,
+        refresh=refresh,
+        no_cache=no_cache,
+        cache_dir=cache_dir,
+        max_age_hours=max_age_hours,
+        dedupe=not no_dedupe,
+        enrich=enrich,
+        enrich_limit=enrich_limit,
+    )
 
     written = _write_dataset(certificates, out_dir, fmt)
 
@@ -272,6 +257,169 @@ def _write_dataset(certificates: list[Certificate], out_dir: Path, fmt: str) -> 
     if fmt in {"json", "both"}:
         written.append(export.write_json(certificates, out_dir / "dataset.json"))
     return written
+
+
+def _load_certificates(
+    target: str,
+    *,
+    refresh: bool,
+    no_cache: bool,
+    cache_dir: Path,
+    max_age_hours: float,
+    dedupe: bool,
+    enrich: bool,
+    enrich_limit: int | None,
+) -> tuple[CollectionResult, int, list[Certificate]]:
+    """Fetch (cache-aware), normalise, optionally enrich — the shared pipeline.
+
+    Returns the collection result, the raw record count (pre-dedupe), and the
+    normalised certificates. Converts engine errors into clean CLI exits.
+    """
+    cache = None if no_cache else Cache(cache_dir)
+    try:
+        with (
+            CrtShJsonSource() as source,
+            console.status(f"Querying crt.sh for {target!r}…", spinner="dots"),
+        ):
+            result = collector.collect(
+                target,
+                source,
+                cache=cache,
+                refresh=refresh,
+                max_age=timedelta(hours=max_age_hours),
+            )
+            raw_count = len(result.records)
+            certificates = parser.build_dataset(result.records, dedupe=dedupe)
+            if enrich:
+                with console.status("Enriching certificates (downloading + parsing)…"):
+                    certificates = _enrich(certificates, source, enrich_limit)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+    except RuntimeError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    return result, raw_count, certificates
+
+
+@app.command()
+def analyze(
+    target: str = typer.Argument(
+        ...,
+        help="TLD, domain, or crt.sh pattern. Examples: '.lk', 'example.com', '%.lk'.",
+    ),
+    charts: bool = typer.Option(
+        False,
+        "--charts",
+        help="Also render PNG charts (needs the 'analysis' extra).",
+    ),
+    out_dir: Path = typer.Option(
+        Path("output"),
+        "--out-dir",
+        "-o",
+        help="Directory for rendered charts (with --charts).",
+    ),
+    enrich: bool = typer.Option(
+        False,
+        "--enrich",
+        help="Download certificates to analyse signature algorithm + key sizes.",
+    ),
+    enrich_limit: int | None = typer.Option(
+        None, "--enrich-limit", help="Enrich at most N certificates.", min=1
+    ),
+    refresh: bool = typer.Option(False, "--refresh", "-r", help="Ignore cache and re-fetch."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Disable the local cache."),
+    cache_dir: Path = typer.Option(
+        DEFAULT_CACHE_DIR, "--cache-dir", help="Directory for cached crt.sh results."
+    ),
+    max_age_hours: float = typer.Option(
+        24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
+    ),
+) -> None:
+    """Analyse the certificate ecosystem for TARGET (the ".lk report card").
+
+    Reports CA market share, certificate-lifetime distribution, issuance over
+    time, and (when enriched) key types and signature algorithms.
+    """
+    _, _, certificates = _load_certificates(
+        target,
+        refresh=refresh,
+        no_cache=no_cache,
+        cache_dir=cache_dir,
+        max_age_hours=max_age_hours,
+        dedupe=True,
+        enrich=enrich,
+        enrich_limit=enrich_limit,
+    )
+
+    report = analysis.analyze(collector.normalize_pattern(target), certificates)
+    _render_analysis(report)
+
+    if charts:
+        _render_charts(report, out_dir)
+
+
+def _render_analysis(report: analysis.EcosystemAnalysis) -> None:
+    """Print the ecosystem report card to the terminal."""
+    console.print()
+    console.print(f"[bold]Pattern:[/bold] {report.pattern}")
+    console.print(f"[bold]Certificates:[/bold] {report.total_certificates:,}")
+    console.print(f"[bold]Unique domains:[/bold] {report.unique_domains:,}")
+    console.print(f"[bold]Wildcard certs:[/bold] {report.wildcard_count:,}")
+
+    if report.ca_shares:
+        console.print(
+            f"[bold]CA concentration:[/bold] top CA {report.ca_concentration_top1:.1%}, "
+            f"top 3 {report.ca_concentration_top3:.1%}"
+        )
+        table = Table(title="Certificate Authority market share", title_justify="left")
+        table.add_column("Certificate Authority")
+        table.add_column("Certs", justify="right")
+        table.add_column("Share", justify="right")
+        for item in report.ca_shares[:10]:
+            table.add_row(item.issuer, f"{item.count:,}", f"{item.share:.1%}")
+        console.print()
+        console.print(table)
+
+    life = report.lifetimes
+    if life.count:
+        console.print()
+        console.print(
+            f"[bold]Lifetimes (days):[/bold] min {life.min_days}, median {life.median_days}, "
+            f"mean {life.mean_days}, max {life.max_days}"
+        )
+        life_table = Table(title="Lifetime distribution", title_justify="left")
+        life_table.add_column("Bucket")
+        life_table.add_column("Certs", justify="right")
+        for label, count in life.buckets:
+            life_table.add_row(label, f"{count:,}")
+        console.print(life_table)
+
+    if report.key_types:
+        console.print()
+        console.print(
+            "[bold]Key types:[/bold] "
+            + ", ".join(f"{name} {count:,}" for name, count in report.key_types)
+        )
+    if report.signature_algorithms:
+        console.print(
+            "[bold]Signature algorithms:[/bold] "
+            + ", ".join(f"{name} {count:,}" for name, count in report.signature_algorithms)
+        )
+
+
+def _render_charts(report: analysis.EcosystemAnalysis, out_dir: Path) -> None:
+    """Render charts, importing the charts module lazily (needs matplotlib)."""
+    from ct_lens.core import charts
+
+    try:
+        written = charts.render_all(report, out_dir)
+    except charts.ChartsUnavailableError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print()
+    for path in written:
+        console.print(f"[green]chart[/green] {path}")
 
 
 @app.command()
