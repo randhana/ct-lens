@@ -19,7 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ct_lens import __version__
-from ct_lens.core import analysis, collector, export, findings, parser
+from ct_lens.core import analysis, collector, export, findings, parser, report
 from ct_lens.core.cache import DEFAULT_CACHE_DIR, Cache
 from ct_lens.core.collector import CollectionResult
 from ct_lens.core.models import Certificate, ScanSummary
@@ -420,6 +420,102 @@ def _render_charts(report: analysis.EcosystemAnalysis, out_dir: Path) -> None:
     console.print()
     for path in written:
         console.print(f"[green]chart[/green] {path}")
+
+
+@app.command("report")
+def report_command(
+    target: str = typer.Argument(
+        ...,
+        help="TLD, domain, or crt.sh pattern. Examples: '.lk', 'example.com', '%.lk'.",
+    ),
+    out_dir: Path = typer.Option(
+        Path("output"),
+        "--out-dir",
+        "-o",
+        help="Directory for the report, dataset, and charts.",
+    ),
+    charts: bool = typer.Option(
+        True,
+        "--charts/--no-charts",
+        help="Render charts and embed them in the report (needs the 'analysis' extra).",
+    ),
+    anonymize: bool = typer.Option(
+        True,
+        "--anonymize/--no-anonymize",
+        help="Anonymise findings in the report (safe default for publishing).",
+    ),
+    brands_file: Path | None = typer.Option(
+        None, "--brands-file", help="Brand/institution labels to protect (one per line)."
+    ),
+    enrich: bool = typer.Option(
+        False, "--enrich", help="Enrich with signature algorithm + key sizes (slower)."
+    ),
+    enrich_limit: int | None = typer.Option(
+        None, "--enrich-limit", help="Enrich at most N certificates.", min=1
+    ),
+    refresh: bool = typer.Option(False, "--refresh", "-r", help="Ignore cache and re-fetch."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Disable the local cache."),
+    cache_dir: Path = typer.Option(
+        DEFAULT_CACHE_DIR, "--cache-dir", help="Directory for cached crt.sh results."
+    ),
+    max_age_hours: float = typer.Option(
+        24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
+    ),
+) -> None:
+    """Generate a full Markdown report (+ dataset + charts) for TARGET.
+
+    One command, end to end: fetch, normalise, analyse, find, chart, and write a
+    publishable Markdown report that seeds the companion write-up.
+    """
+    brands = _read_brands(brands_file)
+
+    _, _, certificates = _load_certificates(
+        target,
+        refresh=refresh,
+        no_cache=no_cache,
+        cache_dir=cache_dir,
+        max_age_hours=max_age_hours,
+        dedupe=True,
+        enrich=enrich,
+        enrich_limit=enrich_limit,
+    )
+
+    pattern = collector.normalize_pattern(target)
+    report_analysis = analysis.analyze(pattern, certificates)
+    results = findings.find_all(certificates, brands=brands, anonymize=anonymize)
+
+    written: list[Path] = []
+    written.append(export.write_csv(certificates, out_dir / "dataset.csv"))
+    written.append(export.write_json(certificates, out_dir / "dataset.json"))
+
+    chart_files: list[Path] = []
+    if charts:
+        chart_files = _try_render_charts(report_analysis, out_dir)
+        written.extend(chart_files)
+
+    markdown = report.generate_markdown(
+        report_analysis, results, chart_files=chart_files, anonymized=anonymize
+    )
+    written.append(report.write_report(markdown, out_dir / "report.md"))
+
+    console.print()
+    console.print(
+        f"[bold]Report for {pattern}[/bold] — {len(certificates):,} certificates, "
+        f"{len(results):,} findings"
+    )
+    for path in written:
+        console.print(f"[green]wrote[/green] {path}")
+
+
+def _try_render_charts(report_analysis: analysis.EcosystemAnalysis, out_dir: Path) -> list[Path]:
+    """Render charts for the report, degrading gracefully if matplotlib is absent."""
+    from ct_lens.core import charts
+
+    try:
+        return charts.render_all(report_analysis, out_dir)
+    except charts.ChartsUnavailableError:
+        err_console.print("[yellow]warning:[/yellow] charts skipped (matplotlib not installed)")
+        return []
 
 
 @app.command("findings")

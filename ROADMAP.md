@@ -15,7 +15,7 @@ command-line tool; **Part B** adds a web UI on top of the same engine. All real 
 | 3 | Parser → dataset | Normalised `Certificate` model (parsed dates, lifetime, wildcard flag); **pre-certificate de-duplication**; optional key/signature enrichment; CSV + JSON export (`ct-lens export`) | ✅ |
 | 4 | Ecosystem analysis + charts | CA market share, certificate-lifetime trends, signature-algorithm / key-size adoption, issuance volume over time; matplotlib charts (`ct-lens analyze`) | ✅ |
 | 5 | Security findings | Lookalike / typosquat detection, exposed internal/staging hostname catalogue, suspicious issuance — anonymised by default | ✅ |
-| 6 | Report generation | Assemble dataset + charts + findings into a Markdown report (`ct-lens report <target>`) | ⬜ |
+| 6 | Report generation | Assemble dataset + charts + findings into a Markdown report (`ct-lens report <target>`) | ✅ |
 | 7 | CLI polish + full dataset | crt.sh **Postgres** source for the complete set, config file, confirm TLD-agnostic, finalise subcommands | ⬜ |
 | **Part B — Web UI** | | | |
 | 8 | API layer | FastAPI wrapping the core: `POST /scan`, job status, results JSON, export — thin wrapper, no duplicated logic | ⬜ |
