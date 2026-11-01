@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ct-lens local output / cache (never commit fetched data)
+.ct-lens-cache/
+output/
+*.csv
+*.json
+!tests/fixtures/*.json
+*.png
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Node (web/ phase)
+node_modules/
+web/dist/
