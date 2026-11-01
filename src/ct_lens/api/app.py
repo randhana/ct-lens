@@ -103,16 +103,24 @@ class Job:
 
 
 def build_results(
-    report: analysis.EcosystemAnalysis, results: list[findings.Finding]
+    report: analysis.EcosystemAnalysis,
+    results: list[findings.Finding],
+    domains: list[str],
 ) -> dict[str, Any]:
-    """Serialise the analysis + findings into a JSON-friendly dict."""
+    """Serialise the analysis + findings (+ the domain list) into a JSON dict."""
     payload = asdict(report)
     payload["ca_concentration"] = {
         "top1": report.ca_concentration_top1,
         "top3": report.ca_concentration_top3,
     }
     payload["findings"] = [asdict(finding) for finding in results]
+    payload["domains"] = domains
     return payload
+
+
+def _unique_domains(certificates: list[Certificate]) -> list[str]:
+    """All distinct domain names across the dataset, sorted."""
+    return sorted({domain for cert in certificates for domain in cert.domains})
 
 
 # --------------------------------------------------------------------------- #
@@ -135,7 +143,7 @@ def _run_scan(job_id: str) -> None:
         report = analysis.analyze(collection.pattern, certificates)
         found = findings.find_all(certificates, anonymize=job.anonymize)
         job.certificates = certificates
-        job.result = build_results(report, found)
+        job.result = build_results(report, found, _unique_domains(certificates))
         job.status = "done"
     except Exception as exc:
         # Any failure (network, parse, …) becomes the job's error state.

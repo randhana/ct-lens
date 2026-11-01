@@ -54,6 +54,10 @@ def test_scan_lifecycle(crtsh_sample: list[dict[str, object]]) -> None:
     assert body["ca_shares"][0]["issuer"] == "Let's Encrypt"
     assert body["ca_concentration"]["top1"] == 0.5
     assert "findings" in body
+    # the full domain/subdomain list is included and sorted
+    assert "example.lk" in body["domains"]
+    assert "www.example.lk" in body["domains"]
+    assert body["domains"] == sorted(body["domains"])
 
 
 @respx.mock

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { datasetUrl, runScan } from "./api";
 import { CAShareChart, IssuanceChart, LifetimeChart } from "./components/Charts";
+import { DomainsList } from "./components/DomainsList";
 import { Findings } from "./components/Findings";
 import { ScanForm } from "./components/ScanForm";
 import { StatCards } from "./components/StatCards";
@@ -80,6 +81,8 @@ export function App() {
           </div>
 
           <Findings findings={results.findings} />
+
+          <DomainsList domains={results.domains} />
         </main>
       )}
 

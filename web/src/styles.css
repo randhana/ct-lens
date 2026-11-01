@@ -254,6 +254,57 @@ code {
   background: var(--info);
 }
 
+/* ---- domains ---- */
+.domains {
+  margin-top: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.domains-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.domains-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.domains-filter {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 180px;
+}
+.domains-filter:focus {
+  outline: 2px solid var(--accent);
+}
+.domains-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 4px 16px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.domains-grid li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.domains-more {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+}
+
 .app-footer {
   margin-top: 40px;
   padding-top: 18px;

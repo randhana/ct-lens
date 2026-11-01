@@ -54,6 +54,7 @@ export interface Results {
   signature_algorithms: [string, number][];
   ca_concentration: { top1: number; top3: number };
   findings: Finding[];
+  domains: string[];
 }
 
 export interface ScanOptions {
