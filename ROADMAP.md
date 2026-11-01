@@ -19,7 +19,7 @@ command-line tool; **Part B** adds a web UI on top of the same engine. All real 
 | 7 | CLI polish + full dataset | crt.sh **Postgres** source for the complete set, `--source` switch, confirm TLD-agnostic, finalise subcommands | ✅ |
 | **Part B — Web UI** | | | |
 | 8 | API layer | FastAPI wrapping the core: `POST /api/scans`, job status, results JSON, dataset export — thin wrapper, no duplicated logic | ✅ |
-| 9 | React dashboard | Vite + React + TypeScript: run a scan, interactive charts (Recharts), findings tables, export | ⬜ |
+| 9 | React dashboard | Vite + React + TypeScript: run a scan, interactive charts (Recharts), findings tables, export | ✅ |
 | 10 | Open-source polish | Screenshots/GIF, usage + architecture docs, example dataset, hosted demo, `v1.0.0` release | ⬜ |
 
 ## Where to look

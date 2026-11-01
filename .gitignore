@@ -16,13 +16,12 @@ env/
 .coverage
 htmlcov/
 
-# ct-lens local output / cache (never commit fetched data)
+# ct-lens local output / cache (never commit fetched data).
+# Scoped to the default output/cache locations so project config (web/*.json,
+# lockfiles) is still tracked.
 .ct-lens-cache/
-output/
-*.csv
-*.json
-!tests/fixtures/*.json
-*.png
+/output/
+/web/dist/
 
 # Editors / OS
 .vscode/
