@@ -19,7 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ct_lens import __version__
-from ct_lens.core import analysis, collector, export, parser
+from ct_lens.core import analysis, collector, export, findings, parser
 from ct_lens.core.cache import DEFAULT_CACHE_DIR, Cache
 from ct_lens.core.collector import CollectionResult
 from ct_lens.core.models import Certificate, ScanSummary
@@ -420,6 +420,110 @@ def _render_charts(report: analysis.EcosystemAnalysis, out_dir: Path) -> None:
     console.print()
     for path in written:
         console.print(f"[green]chart[/green] {path}")
+
+
+@app.command("findings")
+def findings_command(
+    target: str = typer.Argument(
+        ...,
+        help="TLD, domain, or crt.sh pattern. Examples: '.lk', 'example.com', '%.lk'.",
+    ),
+    anonymize: bool = typer.Option(
+        True,
+        "--anonymize/--no-anonymize",
+        help="Mask organisation names (safe default for publishing). "
+        "Use --no-anonymize only for private disclosure work.",
+    ),
+    brands_file: Path | None = typer.Option(
+        None,
+        "--brands-file",
+        help="Text file of brand/institution labels to protect (one per line).",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Also write findings to this JSON file.",
+    ),
+    refresh: bool = typer.Option(False, "--refresh", "-r", help="Ignore cache and re-fetch."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Disable the local cache."),
+    cache_dir: Path = typer.Option(
+        DEFAULT_CACHE_DIR, "--cache-dir", help="Directory for cached crt.sh results."
+    ),
+    max_age_hours: float = typer.Option(
+        24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
+    ),
+) -> None:
+    """Report security findings from public CT data (lookalikes, exposed hosts).
+
+    Findings are anonymised by default so results are safe to publish in
+    aggregate. For private responsible-disclosure work, pass --no-anonymize.
+    """
+    brands = _read_brands(brands_file)
+
+    _, _, certificates = _load_certificates(
+        target,
+        refresh=refresh,
+        no_cache=no_cache,
+        cache_dir=cache_dir,
+        max_age_hours=max_age_hours,
+        dedupe=True,
+        enrich=False,
+        enrich_limit=None,
+    )
+
+    results = findings.find_all(certificates, brands=brands, anonymize=anonymize)
+    _render_findings(results, anonymize=anonymize)
+
+    if out is not None:
+        _write_findings_json(results, out)
+        console.print(f"[green]wrote[/green] {out}")
+
+
+def _read_brands(brands_file: Path | None) -> list[str] | None:
+    """Read a newline-separated brand list, ignoring blanks and comments."""
+    if brands_file is None:
+        return None
+    if not brands_file.exists():
+        err_console.print(f"[red]Error:[/red] brands file not found: {brands_file}")
+        raise typer.Exit(code=2)
+    lines = brands_file.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
+def _render_findings(results: list[findings.Finding], *, anonymize: bool) -> None:
+    """Print findings as a severity-ordered table."""
+    console.print()
+    if anonymize:
+        console.print("[dim]organisation names anonymised (--no-anonymize to reveal)[/dim]")
+    if not results:
+        console.print("No findings.")
+        return
+
+    colours = {"high": "red", "medium": "yellow", "low": "cyan", "info": "white"}
+    table = Table(title=f"Security findings ({len(results)})", title_justify="left")
+    table.add_column("Severity")
+    table.add_column("Category")
+    table.add_column("Domain")
+    table.add_column("Summary")
+    for finding in results:
+        colour = colours.get(finding.severity, "white")
+        table.add_row(
+            f"[{colour}]{finding.severity}[/{colour}]",
+            finding.category,
+            finding.domain,
+            finding.summary,
+        )
+    console.print(table)
+
+
+def _write_findings_json(results: list[findings.Finding], out: Path) -> None:
+    """Write findings to a JSON file."""
+    import json
+    from dataclasses import asdict
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps([asdict(f) for f in results], indent=2), encoding="utf-8")
 
 
 @app.command()
