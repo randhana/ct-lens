@@ -11,6 +11,7 @@ as ISO-8601 strings).
 from __future__ import annotations
 
 import csv
+import io
 import json
 from datetime import datetime
 from pathlib import Path
@@ -68,20 +69,30 @@ def _to_csv_row(certificate: Certificate) -> dict[str, object]:
     return row
 
 
+def to_csv_text(certificates: list[Certificate]) -> str:
+    """Serialise the dataset to a CSV string (used by the CLI and the web API)."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=FIELDNAMES)
+    writer.writeheader()
+    for certificate in certificates:
+        writer.writerow(_to_csv_row(certificate))
+    return buffer.getvalue()
+
+
+def to_json_text(certificates: list[Certificate]) -> str:
+    """Serialise the dataset to a JSON-array string."""
+    return json.dumps([to_record(certificate) for certificate in certificates], indent=2)
+
+
 def write_csv(certificates: list[Certificate], path: Path) -> Path:
     """Write the dataset to ``path`` as CSV. Returns the path written."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        for certificate in certificates:
-            writer.writerow(_to_csv_row(certificate))
+    path.write_text(to_csv_text(certificates), encoding="utf-8")
     return path
 
 
 def write_json(certificates: list[Certificate], path: Path) -> Path:
     """Write the dataset to ``path`` as a JSON array. Returns the path written."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    records = [to_record(certificate) for certificate in certificates]
-    path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+    path.write_text(to_json_text(certificates), encoding="utf-8")
     return path

@@ -54,6 +54,11 @@ analysis = [
 ]
 # The full-dataset Postgres source (added in Phase 7).
 postgres = ["psycopg[binary]>=3.2"]
+# The web API (Phase 8).
+api = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+]
 # Everything needed to develop, lint, type-check, and test.
 dev = [
   "pytest>=8.3",
@@ -61,6 +66,8 @@ dev = [
   "respx>=0.21",         # mock httpx requests so tests never hit the network
   "cryptography>=43.0",  # needed to test (and type-check) the enrichment step
   "matplotlib>=3.9",     # needed to test the charts module
+  "fastapi>=0.115",      # web API + TestClient for API tests
+  "httpx>=0.27",         # TestClient transport
   "ruff>=0.6",
   "mypy>=1.11",
   "pre-commit>=3.8",
