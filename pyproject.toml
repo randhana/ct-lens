@@ -112,6 +112,12 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 files = ["src", "tests"]
 
+# psycopg is an optional dependency (the 'postgres' extra); it may be absent in
+# dev/CI environments, so don't fail type-checking on its import.
+[[tool.mypy.overrides]]
+module = ["psycopg", "psycopg.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"

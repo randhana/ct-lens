@@ -32,3 +32,12 @@ class CertSource(ABC):
             A list of :class:`~ct_lens.core.models.CrtShRecord`.
         """
         raise NotImplementedError
+
+    def close(self) -> None:  # noqa: B027 - intentional no-op default, not abstract
+        """Release any resources held by the source (no-op by default)."""
+
+    def __enter__(self) -> CertSource:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()

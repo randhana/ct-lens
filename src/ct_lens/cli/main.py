@@ -16,6 +16,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from ct_lens import __version__
@@ -23,7 +24,20 @@ from ct_lens.core import analysis, collector, export, findings, parser, report
 from ct_lens.core.cache import DEFAULT_CACHE_DIR, Cache
 from ct_lens.core.collector import CollectionResult
 from ct_lens.core.models import Certificate, ScanSummary
+from ct_lens.core.sources.base import CertSource
 from ct_lens.core.sources.crtsh_json import CrtShJsonSource
+from ct_lens.core.sources.crtsh_pg import CrtShPostgresSource
+
+#: Valid values for the --source option.
+_SOURCES = ("json", "postgres")
+
+
+def _make_source(source: str) -> CertSource:
+    """Construct the chosen certificate source (crt.sh JSON or Postgres)."""
+    if source == "postgres":
+        return CrtShPostgresSource()
+    return CrtShJsonSource()
+
 
 app = typer.Typer(
     name="ct-lens",
@@ -120,21 +134,29 @@ def scan(
         help="Treat cached data older than this many hours as stale.",
         min=0.0,
     ),
+    source: str = typer.Option(
+        "json",
+        "--source",
+        help="Certificate source: 'json' (crt.sh JSON) or 'postgres' (full dataset).",
+    ),
 ) -> None:
     """Fetch certificates for TARGET from crt.sh and print a quick summary.
 
     Results are cached on disk, so re-running the same scan is instant and does
     not re-query crt.sh (use --refresh to force a re-fetch).
     """
+    if source not in _SOURCES:
+        err_console.print(f"[red]Error:[/red] --source must be one of: {', '.join(_SOURCES)}")
+        raise typer.Exit(code=2)
     cache = None if no_cache else Cache(cache_dir)
     try:
         with (
-            CrtShJsonSource() as source,
-            console.status(f"Querying crt.sh for {target!r}…", spinner="dots"),
+            _make_source(source) as cert_source,
+            console.status(f"Querying crt.sh ({source}) for {target!r}…", spinner="dots"),
         ):
             result = collector.collect(
                 target,
-                source,
+                cert_source,
                 cache=cache,
                 refresh=refresh,
                 max_age=timedelta(hours=max_age_hours),
@@ -142,11 +164,11 @@ def scan(
             )
     except ValueError as exc:
         # User error (e.g. empty target) — show a clean message, not a traceback.
-        err_console.print(f"[red]Error:[/red] {exc}")
+        err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=2) from exc
     except RuntimeError as exc:
         # Upstream/network failure after retries.
-        err_console.print(f"[red]crt.sh error:[/red] {exc}")
+        err_console.print(f"[red]crt.sh error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
 
     summary = collector.summarize_records(result.pattern, result.records)
@@ -197,6 +219,9 @@ def export_dataset(
     max_age_hours: float = typer.Option(
         24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
     ),
+    source: str = typer.Option(
+        "json", "--source", help="Certificate source: 'json' or 'postgres' (full dataset)."
+    ),
 ) -> None:
     """Fetch, normalise, de-duplicate, and export the certificate dataset.
 
@@ -215,6 +240,7 @@ def export_dataset(
         no_cache=no_cache,
         cache_dir=cache_dir,
         max_age_hours=max_age_hours,
+        source=source,
         dedupe=not no_dedupe,
         enrich=enrich,
         enrich_limit=enrich_limit,
@@ -236,16 +262,20 @@ def export_dataset(
         console.print(f"[green]wrote[/green] {path}")
 
 
-def _enrich(
-    certificates: list[Certificate], source: CrtShJsonSource, enrich_limit: int | None
-) -> list[Certificate]:
-    """Run the optional enrichment step, importing it lazily (needs cryptography)."""
+def _enrich(certificates: list[Certificate], enrich_limit: int | None) -> list[Certificate]:
+    """Run the optional enrichment step (lazy import; needs cryptography).
+
+    Enrichment always downloads raw certificates from crt.sh's JSON endpoint,
+    regardless of which ``--source`` produced the dataset, so it uses its own
+    :class:`CrtShJsonSource`.
+    """
     from ct_lens.core import enrich as enrich_mod
 
     try:
-        return enrich_mod.enrich(certificates, source, limit=enrich_limit)
+        with CrtShJsonSource() as download_source:
+            return enrich_mod.enrich(certificates, download_source, limit=enrich_limit)
     except enrich_mod.EnrichmentUnavailableError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
+        err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
 
 
@@ -262,6 +292,7 @@ def _write_dataset(certificates: list[Certificate], out_dir: Path, fmt: str) -> 
 def _load_certificates(
     target: str,
     *,
+    source: str = "json",
     refresh: bool,
     no_cache: bool,
     cache_dir: Path,
@@ -275,15 +306,18 @@ def _load_certificates(
     Returns the collection result, the raw record count (pre-dedupe), and the
     normalised certificates. Converts engine errors into clean CLI exits.
     """
+    if source not in _SOURCES:
+        err_console.print(f"[red]Error:[/red] --source must be one of: {', '.join(_SOURCES)}")
+        raise typer.Exit(code=2)
     cache = None if no_cache else Cache(cache_dir)
     try:
         with (
-            CrtShJsonSource() as source,
-            console.status(f"Querying crt.sh for {target!r}…", spinner="dots"),
+            _make_source(source) as cert_source,
+            console.status(f"Querying crt.sh ({source}) for {target!r}…", spinner="dots"),
         ):
             result = collector.collect(
                 target,
-                source,
+                cert_source,
                 cache=cache,
                 refresh=refresh,
                 max_age=timedelta(hours=max_age_hours),
@@ -292,12 +326,12 @@ def _load_certificates(
             certificates = parser.build_dataset(result.records, dedupe=dedupe)
             if enrich:
                 with console.status("Enriching certificates (downloading + parsing)…"):
-                    certificates = _enrich(certificates, source, enrich_limit)
+                    certificates = _enrich(certificates, enrich_limit)
     except ValueError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
+        err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=2) from exc
     except RuntimeError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
+        err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
     return result, raw_count, certificates
 
@@ -335,6 +369,9 @@ def analyze(
     max_age_hours: float = typer.Option(
         24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
     ),
+    source: str = typer.Option(
+        "json", "--source", help="Certificate source: 'json' or 'postgres' (full dataset)."
+    ),
 ) -> None:
     """Analyse the certificate ecosystem for TARGET (the ".lk report card").
 
@@ -347,6 +384,7 @@ def analyze(
         no_cache=no_cache,
         cache_dir=cache_dir,
         max_age_hours=max_age_hours,
+        source=source,
         dedupe=True,
         enrich=enrich,
         enrich_limit=enrich_limit,
@@ -415,7 +453,7 @@ def _render_charts(report: analysis.EcosystemAnalysis, out_dir: Path) -> None:
     try:
         written = charts.render_all(report, out_dir)
     except charts.ChartsUnavailableError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
+        err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
     console.print()
     for path in written:
@@ -461,6 +499,9 @@ def report_command(
     max_age_hours: float = typer.Option(
         24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
     ),
+    source: str = typer.Option(
+        "json", "--source", help="Certificate source: 'json' or 'postgres' (full dataset)."
+    ),
 ) -> None:
     """Generate a full Markdown report (+ dataset + charts) for TARGET.
 
@@ -475,6 +516,7 @@ def report_command(
         no_cache=no_cache,
         cache_dir=cache_dir,
         max_age_hours=max_age_hours,
+        source=source,
         dedupe=True,
         enrich=enrich,
         enrich_limit=enrich_limit,
@@ -549,6 +591,9 @@ def findings_command(
     max_age_hours: float = typer.Option(
         24.0, "--max-age", help="Treat cached data older than this many hours as stale.", min=0.0
     ),
+    source: str = typer.Option(
+        "json", "--source", help="Certificate source: 'json' or 'postgres' (full dataset)."
+    ),
 ) -> None:
     """Report security findings from public CT data (lookalikes, exposed hosts).
 
@@ -563,6 +608,7 @@ def findings_command(
         no_cache=no_cache,
         cache_dir=cache_dir,
         max_age_hours=max_age_hours,
+        source=source,
         dedupe=True,
         enrich=False,
         enrich_limit=None,
