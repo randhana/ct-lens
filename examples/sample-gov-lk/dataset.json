@@ -1,0 +1,76 @@
+[
+  {
+    "cert_id": 1001,
+    "serial_number": "03aa11bb22cc",
+    "issuer": "Let's Encrypt",
+    "issuer_name": "C=US, O=Let's Encrypt, CN=R3",
+    "common_name": "example.lk",
+    "domains": [
+      "example.lk",
+      "www.example.lk"
+    ],
+    "not_before": "2024-01-15T09:00:00+00:00",
+    "not_after": "2024-04-14T09:00:00+00:00",
+    "entry_timestamp": "2024-01-15T10:00:00+00:00",
+    "lifetime_days": 90,
+    "is_wildcard": false,
+    "signature_algorithm": null,
+    "key_type": null,
+    "key_size": null
+  },
+  {
+    "cert_id": 1002,
+    "serial_number": "04dd33ee44ff",
+    "issuer": "Let's Encrypt",
+    "issuer_name": "C=US, O=Let's Encrypt, CN=R3",
+    "common_name": "shop.example.lk",
+    "domains": [
+      "shop.example.lk"
+    ],
+    "not_before": "2024-02-20T12:00:00+00:00",
+    "not_after": "2024-05-20T12:00:00+00:00",
+    "entry_timestamp": "2024-02-20T12:30:00+00:00",
+    "lifetime_days": 90,
+    "is_wildcard": false,
+    "signature_algorithm": null,
+    "key_type": null,
+    "key_size": null
+  },
+  {
+    "cert_id": 1003,
+    "serial_number": "05ffaabbccdd",
+    "issuer": "GlobalSign nv-sa",
+    "issuer_name": "C=BE, O=GlobalSign nv-sa, CN=GlobalSign RSA OV SSL CA 2018",
+    "common_name": "gov.lk",
+    "domains": [
+      "gov.lk",
+      "*.gov.lk"
+    ],
+    "not_before": "2023-11-05T08:00:00+00:00",
+    "not_after": "2024-11-05T08:00:00+00:00",
+    "entry_timestamp": "2023-11-05T08:15:00+00:00",
+    "lifetime_days": 366,
+    "is_wildcard": true,
+    "signature_algorithm": null,
+    "key_type": null,
+    "key_size": null
+  },
+  {
+    "cert_id": 1004,
+    "serial_number": "06aabbccddee",
+    "issuer": "CN=Self-signed test CA",
+    "issuer_name": "CN=Self-signed test CA",
+    "common_name": "vpn-staging.internal.example.lk",
+    "domains": [
+      "vpn-staging.internal.example.lk"
+    ],
+    "not_before": "2024-03-01T00:00:00+00:00",
+    "not_after": "2025-03-01T00:00:00+00:00",
+    "entry_timestamp": "2024-03-01T00:00:00+00:00",
+    "lifetime_days": 365,
+    "is_wildcard": false,
+    "signature_algorithm": null,
+    "key_type": null,
+    "key_size": null
+  }
+]

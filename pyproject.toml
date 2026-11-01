@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ct-lens"
-version = "0.1.0"
+version = "1.0.0"
 description = "Map the HTTPS certificate landscape of a whole TLD from public Certificate Transparency logs."
 readme = "README.md"
 requires-python = ">=3.10"

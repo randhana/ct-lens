@@ -1,0 +1,5 @@
+cert_id,serial_number,issuer,issuer_name,common_name,domains,not_before,not_after,entry_timestamp,lifetime_days,is_wildcard,signature_algorithm,key_type,key_size
+1001,03aa11bb22cc,Let's Encrypt,"C=US, O=Let's Encrypt, CN=R3",example.lk,example.lk www.example.lk,2024-01-15T09:00:00+00:00,2024-04-14T09:00:00+00:00,2024-01-15T10:00:00+00:00,90,False,,,
+1002,04dd33ee44ff,Let's Encrypt,"C=US, O=Let's Encrypt, CN=R3",shop.example.lk,shop.example.lk,2024-02-20T12:00:00+00:00,2024-05-20T12:00:00+00:00,2024-02-20T12:30:00+00:00,90,False,,,
+1003,05ffaabbccdd,GlobalSign nv-sa,"C=BE, O=GlobalSign nv-sa, CN=GlobalSign RSA OV SSL CA 2018",gov.lk,gov.lk *.gov.lk,2023-11-05T08:00:00+00:00,2024-11-05T08:00:00+00:00,2023-11-05T08:15:00+00:00,366,True,,,
+1004,06aabbccddee,CN=Self-signed test CA,CN=Self-signed test CA,vpn-staging.internal.example.lk,vpn-staging.internal.example.lk,2024-03-01T00:00:00+00:00,2025-03-01T00:00:00+00:00,2024-03-01T00:00:00+00:00,365,False,,,

@@ -1,168 +1,135 @@
 # ct-lens
 
-> An open-source tool that analyses **Certificate Transparency (CT)** logs to map the
-> HTTPS certificate landscape of a whole top-level domain — starting with `.lk`
-> (Sri Lanka) — using only public data, without ever connecting to a target server.
+[![CI](https://github.com/your-org/ct-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/ct-lens/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
-**Working name:** `ct-lens` (a lens onto Certificate Transparency). Rename freely.
+> An open-source tool that analyses **Certificate Transparency (CT)** logs to map the HTTPS
+> certificate landscape of a whole top-level domain — starting with `.lk` (Sri Lanka) — using
+> only public data, **without ever connecting to a target server**.
 
-**Status:** project idea / specification. No code yet. This document is the plan to build from.
+Every valid HTTPS certificate is recorded in public, append-only Certificate Transparency logs.
+ct-lens reads that record (via [crt.sh](https://crt.sh)) and answers questions about a country's
+— or any TLD's — certificate ecosystem: who issues its certificates, how certificate hygiene is
+trending, and where public logs leak lookalike domains or internal hostnames. It is **defensive /
+threat-intelligence tooling**: the same technique security teams use to watch their own brands.
 
----
-
-## 1. Why this exists
-
-Every valid HTTPS certificate on the internet is recorded in public, append-only
-**Certificate Transparency logs**. Certificate Authorities (CAs) are required to publish
-an entry for every certificate they issue, and browsers reject certificates that are not
-logged. That means there is a complete, public, searchable record of essentially every
-certificate ever issued — including every `.lk` domain.
-
-`ct-lens` reads that public record and answers questions nobody has published answers to
-about a country's (or any TLD's) certificate ecosystem. It is **defensive / threat-intel
-work**: the same technique security teams use to watch for certificates issued against
-their own brand.
-
-### Design thesis — what makes this safe and worth doing
-
-- **Zero target contact.** The tool never connects to a bank, a government site, or any
-  target server. It only reads CT logs that CAs are required to publish. (This is the
-  whole point: no active scanning, no probing, no unauthorized-access risk.)
-- **100% public data.** Everything comes from CT logs / crt.sh. Nothing private is accessed.
-- **Original.** "The certificate landscape of `.lk`, 2026" has not been written. The output
-  is a dataset we assemble and questions we answer, not a summary of known material.
-- **Reusable.** Default target is `.lk`, but the tool takes any TLD (or domain pattern),
-  so others can rerun it for their own country or organisation.
+It ships as a **command-line tool** and a **web dashboard**, both built on one shared engine.
 
 ---
 
-## 2. Data sources
+## Why it's safe (and original)
 
-All public. No credentials against any target.
+- **Zero target contact.** ct-lens only reads CT logs. No live TLS handshakes, no scanning, no probing.
+- **100% public data.** Everything comes from crt.sh. Nothing private is accessed.
+- **Aggregate / anonymised by default.** Published output never names an organisation; findings are
+  anonymised unless you explicitly opt out for private disclosure.
+- **Reusable.** Default target is `.lk`, but any TLD, domain, or crt.sh pattern works.
 
-| Source | What it gives | How |
-| --- | --- | --- |
-| **crt.sh web/JSON** | Searchable CT index. Wildcard query returns every cert for a pattern. | `https://crt.sh/?q=%25.lk&output=json` |
-| **crt.sh PostgreSQL** | The same data as a public SQL database — millions of rows, richer queries. | Public read-only Postgres endpoint |
-| **Raw CT logs (optional, later)** | Lower-level log entries direct from Google/Cloudflare/etc. logs. | CT log HTTP APIs |
-
-Primary source for v1: **crt.sh** (JSON for a quick start, Postgres for the full dataset).
-
----
-
-## 3. Core features (scope for the tool)
-
-### 3.1 Collect
-- Fetch all certificates for a given TLD or domain pattern (default: `%.lk`).
-- Handle pagination / large result sets and rate limits politely.
-- Cache raw results locally so analysis is repeatable without re-fetching.
-
-### 3.2 Parse & build the dataset
-For each certificate, extract and normalise:
-- Domain name(s) / SANs
-- Issuing CA
-- Not-before / not-after dates → **certificate lifetime**
-- Signature algorithm
-- Key type and size
-- Entry timestamp
-
-Output a clean, queryable dataset (CSV + JSON).
-
-### 3.3 Ecosystem analysis (the "report card", aggregate only)
-- **Who controls `.lk` HTTPS?** Share of certificates by issuing CA (Let's Encrypt vs.
-  commercial CAs vs. local CA). Is the country dependent on one or two issuers?
-- **Hygiene over time:** certificate lifetimes trend (as the industry moved to 90-day and
-  shorter certs), signature-algorithm and key-size adoption, any lingering weak/deprecated
-  practices.
-- **Volume & growth:** issuance over time.
-
-### 3.4 Security findings (from public data only)
-- **Lookalike / typosquat detection:** certificates for domains that imitate a known
-  brand or institution (e.g. `bankofceyl0n.lk`). A lookalike cert in the logs is often the
-  first visible sign of a phishing operation being set up.
-- **Exposed internal / staging hostnames:** organisations frequently leak hostnames like
-  `vpn-test.internal.example.lk` or `admin-staging.example.lk` into certificates without
-  realising CT makes them public permanently. Catalogue these (anonymised where sensitive).
-- **Suspicious issuance:** a cert for a sensitive domain issued by a CA that org would not
-  normally use.
-
-### 3.5 Output
-- Machine-readable dataset (CSV / JSON).
-- Charts for the report: issuance by CA, lifetimes over time, algorithm adoption.
-- A summary (Markdown) that can seed the companion blog post.
+See [disclosure rules](#responsible-disclosure) below. Full phase-by-phase history is in
+[`ROADMAP.md`](ROADMAP.md).
 
 ---
 
-## 4. Deliverables
+## Install
 
-1. **The open-source tool** (this repo) — rerunnable for any TLD, documented, on GitHub.
-2. **A companion write-up:** "The certificate landscape of `.lk`, 2026" — charts + the
-   original findings. Published on the blog.
+```bash
+git clone https://github.com/your-org/ct-lens
+cd ct-lens
+python -m venv .venv && source .venv/bin/activate
+pip install -e .                 # core CLI
+pip install -e ".[analysis]"     # + charts and certificate enrichment
+pip install -e ".[postgres]"     # + the full-dataset Postgres source
+```
 
----
+## Command-line usage
 
-## 5. Responsible disclosure & publishing rules
+```bash
+ct-lens scan .lk                       # quick summary: record count, top CAs, sample domains
+ct-lens scan gov.lk --limit 50         # a lighter, specific query
+ct-lens export .lk -o output           # normalised CSV + JSON dataset
+ct-lens analyze .lk --charts           # the "report card" + PNG charts
+ct-lens findings .lk                   # lookalikes / exposed hosts (anonymised)
+ct-lens report .lk -o output           # one command: dataset + charts + Markdown report
+ct-lens cache --clear                  # manage the local cache
+```
 
-These are part of the project, not an afterthought.
+Useful flags (most commands): `--refresh` (re-fetch), `--no-cache`, `--cache-dir`, `--max-age`,
+`--source json|postgres`, `--enrich` (add signature algorithm + key sizes), and
+`--no-anonymize` (for private disclosure work). See `ct-lens <command> --help`.
 
-- **Publish ecosystem stats in aggregate / anonymised.** The report never names an
-  organisation as "insecure." It reports on the population (e.g. "X% still use weak
-  algorithm Y"), which removes any defamation / reputational surface.
-- **If a specific finding is sensitive** (a live phishing lookalike, an exposed internal
-  host that reveals an attack surface): report it **privately** to the affected
-  organisation and to **Sri Lanka CERT|CC** and/or **TechCERT** first. Publish only after
-  it is resolved, or publish only in anonymised aggregate.
-- Going through the official CERT channel is both safer and a stronger professional signal
-  than unilateral publication.
+Results are **cached on disk**, so re-running an analysis is instant and offline — handy because
+crt.sh is a shared service that often rate-limits or returns `502` on broad queries.
 
----
+### Example output
 
-## 6. Explicitly out of scope
+A sample report bundle (from synthetic fixture data) lives in
+[`examples/sample-gov-lk/`](examples/sample-gov-lk/) — a Markdown report, CSV/JSON dataset, and
+these charts:
 
-To keep the project clean, safe, and focused, `ct-lens` does **not**:
-- Connect to, scan, or probe any target server (no live TLS handshakes, no port scanning,
-  no vulnerability probing).
-- Name-and-shame specific institutions in the public report.
-- Attempt any exploitation of anything it finds.
+![CA market share](examples/sample-gov-lk/ca_shares.png)
 
-If a later version adds *passive* live checks (e.g. observing a server's advertised TLS
-config the way SSL Labs does), that is a separate, clearly-scoped decision — not part of v1.
+## Web dashboard
 
----
+```bash
+pip install -e ".[api]"
+uvicorn ct_lens.api.app:app --port 8000      # the API
 
-## 7. Suggested tech stack (to confirm when building)
+cd web && npm install && npm run dev         # the dashboard -> http://localhost:5173
+```
 
-Flexible; chosen to match existing skills.
-
-- **Language:** Python (fits the data-pipeline work; same toolkit as the fd-rates pipeline).
-- **Fetch:** `requests` / `httpx` for crt.sh JSON; `psycopg`/`psycopg2` for the crt.sh Postgres.
-- **Parse certs:** `cryptography` library.
-- **Analyse:** `pandas`.
-- **Charts:** `matplotlib` (or export data and chart in the blog).
-- **Packaging:** a small CLI (`ct-lens <tld>`), reproducible with a `requirements.txt` /
-  `pyproject.toml`.
-
-Final choices to be made at build time.
-
----
-
-## 8. Rough build phases
-
-1. **Spike:** query crt.sh JSON for `%.lk`, pull a sample, print count + top issuing CAs +
-   sample domains. (Confirms the data is workable before building further.)
-2. **Collector:** full, cached, paginated fetch of the `.lk` dataset (JSON first, Postgres
-   for the complete set).
-3. **Parser → dataset:** normalise into CSV/JSON with the fields in §3.2.
-4. **Ecosystem analysis + charts** (§3.3).
-5. **Security findings** (§3.4): lookalike detection, exposed-hostname catalogue.
-6. **Report generation** (§3.5) + write the companion blog post.
-7. **Polish for open source:** CLI, docs, make it TLD-agnostic, publish to GitHub.
+Enter a TLD, run a scan, and explore interactive charts (CA share, lifetimes, issuance) and the
+findings table, with CSV/JSON export. See [`web/README.md`](web/README.md).
 
 ---
 
-## 9. Notes
+## Architecture
 
-- Legality: reading CT logs is reading data CAs are required to publish; this is what
-  crt.sh, SSL Labs, Hardenize and others do publicly. The project stays on the safe side by
-  never contacting targets and by following the disclosure rules in §5.
-- Keep the tool generic enough that the `.lk` run is just the first of many possible runs.
+All real logic lives in `src/ct_lens/core/`; the CLI and web API are thin wrappers over it, so
+behaviour is identical across both.
+
+```
+crt.sh (JSON / Postgres)
+      │   sources/            fetch certificate records
+      ▼
+   collector  ──►  cache      fetch once, re-run offline
+      │
+      ▼
+    parser                    normalise + de-duplicate pre-certs
+      │
+      ├─► analysis            CA share, lifetimes, issuance (the "report card")
+      ├─► findings            lookalikes, exposed hosts, suspicious issuance
+      └─► export / charts / report
+
+   cli/  and  api/  →  both call the pipeline above; web/ is a React client of api/
+```
+
+More detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check . && ruff format --check .    # lint + format
+mypy                                     # strict type-checking
+pytest                                   # tests (never hit the network)
+```
+
+CI runs all of the above on Python 3.10–3.12. Tests mock crt.sh with recorded fixtures, so the
+suite is fast, deterministic, and offline.
+
+## Responsible disclosure
+
+- Publish ecosystem stats **in aggregate / anonymised** — never name an organisation as "insecure".
+- For a sensitive individual finding (a live phishing lookalike, an exposed internal host), report
+  it **privately** to the affected organisation and to **Sri Lanka CERT|CC** and/or **TechCERT**
+  first. Publish only after resolution, or only in anonymised aggregate.
+
+## Out of scope
+
+ct-lens does **not** connect to / scan / probe any server, name-and-shame specific institutions,
+or attempt any exploitation. It reads public logs and nothing else.
+
+## License
+
+[MIT](LICENSE).

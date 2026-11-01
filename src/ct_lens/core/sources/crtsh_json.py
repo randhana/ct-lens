@@ -32,7 +32,7 @@ from ct_lens.core.sources.base import CertSource
 CRTSH_URL: Final = "https://crt.sh/"
 
 #: Identifies the tool to crt.sh operators. Update the URL when published.
-USER_AGENT: Final = "ct-lens/0.1 (+https://github.com/your-org/ct-lens; CT landscape tool)"
+USER_AGENT: Final = "ct-lens/1.0 (+https://github.com/your-org/ct-lens; CT landscape tool)"
 
 #: crt.sh can be slow; wait generously before giving up on a single request.
 DEFAULT_TIMEOUT_S: Final = 60.0
