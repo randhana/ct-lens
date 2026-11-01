@@ -1,14 +1,25 @@
-"""Collector — orchestrates a certificate source into a usable result.
+"""Collector — orchestrates a source (+ cache) into usable records.
 
-Phase 1 keeps this deliberately small: normalise the user's target into a
-crt.sh pattern, fetch records from a source, and summarise them. Caching,
-pagination, and the full paginated fetch arrive in Phase 2.
+The collector is the one place that ties together "where do records come from"
+(:mod:`ct_lens.core.sources`) and "have we already fetched them"
+(:mod:`ct_lens.core.cache`). Everything downstream (analysis, findings,
+reporting) consumes the collector's output and never talks to crt.sh directly.
+
+Caching behaviour
+-----------------
+A full fetch always stores the **complete** result set, even when the caller
+asked for a ``limit``. That way a later, unlimited run is served entirely from
+cache instead of re-fetching. ``limit`` only trims the records returned to the
+caller.
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
+from ct_lens.core.cache import DEFAULT_MAX_AGE, Cache
 from ct_lens.core.models import CrtShRecord, ScanSummary
 from ct_lens.core.sources.base import CertSource
 
@@ -17,6 +28,16 @@ SAMPLE_SIZE = 10
 
 #: How many issuing CAs to list in a :class:`ScanSummary`.
 TOP_ISSUERS = 10
+
+
+@dataclass(slots=True)
+class CollectionResult:
+    """The outcome of a collect: the records plus provenance metadata."""
+
+    pattern: str
+    records: list[CrtShRecord]
+    from_cache: bool
+    fetched_at: datetime
 
 
 def normalize_pattern(target: str) -> str:
@@ -56,6 +77,66 @@ def normalize_pattern(target: str) -> str:
     return f"%.{target}"
 
 
+def collect(
+    target: str,
+    source: CertSource,
+    *,
+    cache: Cache | None = None,
+    refresh: bool = False,
+    max_age: timedelta = DEFAULT_MAX_AGE,
+    limit: int | None = None,
+) -> CollectionResult:
+    """Fetch records for ``target``, using the cache when possible.
+
+    Args:
+        target: TLD, domain, or crt.sh pattern (see :func:`normalize_pattern`).
+        source: The certificate source to fetch from.
+        cache: Optional on-disk cache. ``None`` disables caching entirely.
+        refresh: If ``True``, ignore any cached copy and re-fetch (then
+            overwrite the cache).
+        max_age: Cached data older than this is considered stale and re-fetched.
+        limit: Optional cap on the records *returned* (the full set is still
+            cached).
+
+    Returns:
+        A :class:`CollectionResult` including whether the data came from cache.
+    """
+    pattern = normalize_pattern(target)
+
+    # 1. Try the cache first (unless the caller forced a refresh).
+    if cache is not None and not refresh:
+        entry = cache.load(source.name, pattern, max_age=max_age)
+        if entry is not None:
+            records = [CrtShRecord.from_json(row) for row in entry.records]
+            return CollectionResult(
+                pattern=pattern,
+                records=_apply_limit(records, limit),
+                from_cache=True,
+                fetched_at=entry.fetched_at,
+            )
+
+    # 2. Cache miss (or refresh) -> fetch the FULL set from the source.
+    records = source.fetch(pattern)
+
+    # 3. Store the complete result so future runs are served from cache.
+    fetched_at = datetime.now(timezone.utc)
+    if cache is not None:
+        entry = cache.store(source.name, pattern, [r.to_dict() for r in records])
+        fetched_at = entry.fetched_at
+
+    return CollectionResult(
+        pattern=pattern,
+        records=_apply_limit(records, limit),
+        from_cache=False,
+        fetched_at=fetched_at,
+    )
+
+
+def _apply_limit(records: list[CrtShRecord], limit: int | None) -> list[CrtShRecord]:
+    """Return at most ``limit`` records (or all of them when ``limit`` is None)."""
+    return records if limit is None else records[:limit]
+
+
 def summarize_records(pattern: str, records: list[CrtShRecord]) -> ScanSummary:
     """Build a :class:`ScanSummary` from fetched records.
 
@@ -79,17 +160,15 @@ def summarize_records(pattern: str, records: list[CrtShRecord]) -> ScanSummary:
     )
 
 
-def scan(target: str, source: CertSource, *, limit: int | None = None) -> ScanSummary:
-    """Run a Phase 1 scan: fetch records for ``target`` and summarise them.
-
-    Args:
-        target: TLD, domain, or crt.sh pattern (see :func:`normalize_pattern`).
-        source: The certificate source to fetch from.
-        limit: Optional cap on records fetched (handy for a quick spike).
-
-    Returns:
-        A :class:`ScanSummary`.
-    """
-    pattern = normalize_pattern(target)
-    records = source.fetch(pattern, limit=limit)
-    return summarize_records(pattern, records)
+def scan(
+    target: str,
+    source: CertSource,
+    *,
+    cache: Cache | None = None,
+    refresh: bool = False,
+    max_age: timedelta = DEFAULT_MAX_AGE,
+    limit: int | None = None,
+) -> ScanSummary:
+    """Convenience wrapper: :func:`collect` then :func:`summarize_records`."""
+    result = collect(target, source, cache=cache, refresh=refresh, max_age=max_age, limit=limit)
+    return summarize_records(result.pattern, result.records)

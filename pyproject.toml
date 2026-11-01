@@ -98,6 +98,11 @@ select = [
   "RUF",      # ruff-specific rules
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer's dependency-injection pattern puts Option()/Argument() in parameter
+# defaults by design; this is safe and idiomatic, so exempt them from B008.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true

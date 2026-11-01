@@ -86,6 +86,24 @@ class CrtShRecord:
             serial_number=_str("serial_number"),
         )
 
+    def to_dict(self) -> dict[str, object]:
+        """Serialise back to a crt.sh-shaped dict (used by the on-disk cache).
+
+        The keys match crt.sh's JSON field names, so a round-trip through
+        :meth:`to_dict` and :meth:`from_json` reproduces an equivalent record.
+        """
+        return {
+            "id": self.id,
+            "issuer_ca_id": self.issuer_ca_id,
+            "issuer_name": self.issuer_name,
+            "common_name": self.common_name,
+            "name_value": self.name_value,
+            "entry_timestamp": self.entry_timestamp,
+            "not_before": self.not_before,
+            "not_after": self.not_after,
+            "serial_number": self.serial_number,
+        }
+
     @property
     def issuer(self) -> str:
         """Human-friendly CA name (the ``O=`` component when available)."""
